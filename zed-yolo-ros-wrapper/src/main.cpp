@@ -317,7 +317,7 @@ int main(int argc, char *argv[]) {
 
     sl::Camera zed;
     sl::InitParameters init_params;
-    init_params.camera_resolution = sl::RESOLUTION_HD1080;
+    init_params.camera_resolution = sl::RESOLUTION_HD720;
     init_params.coordinate_units = sl::UNIT_METER;
     if (!filename.empty()) init_params.svo_input_filename.set(filename.c_str());
 
