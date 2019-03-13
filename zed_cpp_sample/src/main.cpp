@@ -9,6 +9,11 @@
 #include <mutex>              // std::mutex, std::unique_lock
 #include <condition_variable> // std::condition_variable
 
+// ROS
+#include "ros/ros.h"
+#include "std_msgs/String.h"
+#include <sstream>
+
 // This is a modified version of https://github.com/AlexeyAB/darknet/blob/master/src/yolo_console_dll.cpp
 // Basically simplified and using the ZED SDK
 
@@ -80,21 +85,29 @@ std::vector<bbox_t_3d> getObjectDepth(std::vector<bbox_t> &bbox_vect, sl::Mat &x
 
 void draw_boxes(cv::Mat mat_img, std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
     for (auto &i : result_vec) {
-        cv::Scalar color = obj_id_to_color(i.bbox.obj_id);
-        cv::rectangle(mat_img, cv::Rect(i.bbox.x, i.bbox.y, i.bbox.w, i.bbox.h), color, 2);
-        if (obj_names.size() > i.bbox.obj_id) {
-            std::string obj_name = obj_names[i.bbox.obj_id];
-            std::stringstream stream;
-            stream << std::fixed << std::setprecision(2) << sqrt(i.coord.x * i.coord.x + i.coord.y * i.coord.y + i.coord.z * i.coord.z);
-            obj_name += " - " + stream.str() + "m";
-            cv::Size const text_size = getTextSize(obj_name, cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2, 2, 0);
-            int const max_width = (text_size.width > i.bbox.w + 2) ? text_size.width : (i.bbox.w + 2);
-            cv::rectangle(mat_img, cv::Point2f(std::max((int) i.bbox.x - 1, 0), std::max((int) i.bbox.y - 30, 0)),
-                    cv::Point2f(std::min((int) i.bbox.x + max_width, mat_img.cols - 1),
-                    std::min((int) i.bbox.y, mat_img.rows - 1)),
-                    color, CV_FILLED, 8, 0);
-            putText(mat_img, obj_name, cv::Point2f(i.bbox.x, i.bbox.y - 10), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2,
-                    cv::Scalar(0, 0, 0), 2);
+		if (obj_names.size() > i.bbox.obj_id) {
+			if (obj_names[i.bbox.obj_id] == "person"){
+				cv::Scalar color = obj_id_to_color(i.bbox.obj_id);
+				cv::rectangle(mat_img, cv::Rect(i.bbox.x, i.bbox.y, i.bbox.w, i.bbox.h), color, 2);
+				
+				std::string obj_name = obj_names[i.bbox.obj_id];
+				std::stringstream streamx;
+				std::stringstream streamy;
+				std::stringstream streamz;
+				streamx << std::fixed << std::setprecision(2) << i.coord.x;
+				streamy << std::fixed << std::setprecision(2) << i.coord.y;
+				streamz << std::fixed << std::setprecision(2) << i.coord.z;
+				
+				obj_name += ",  x = " + streamx.str() + "m,  y = " + streamy.str() + "m,  z = " + streamz.str();
+				cv::Size const text_size = getTextSize(obj_name, cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2, 2, 0);
+				int const max_width = (text_size.width > i.bbox.w + 2) ? text_size.width : (i.bbox.w + 2);
+				cv::rectangle(mat_img, cv::Point2f(std::max((int) i.bbox.x - 1, 0), std::max((int) i.bbox.y - 30, 0)),
+						cv::Point2f(std::min((int) i.bbox.x + max_width, mat_img.cols - 1),
+						std::min((int) i.bbox.y, mat_img.rows - 1)),
+						color, CV_FILLED, 8, 0);
+				putText(mat_img, obj_name, cv::Point2f(i.bbox.x, i.bbox.y - 10), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2,
+						cv::Scalar(0, 0, 0), 2);
+			}
         }
     }
 }
@@ -164,11 +177,37 @@ void detectorThread(std::string cfg_file, std::string weights_file, float thresh
     }
 }
 
+void fill_people_msg(std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
+    for (auto &i : result_vec) {
+		if (obj_names.size() > i.bbox.obj_id) {
+			if (obj_names[i.bbox.obj_id] == "person"){
+				
+				std::string obj_name = obj_names[i.bbox.obj_id];
+				std::stringstream streamx;
+				std::stringstream streamy;
+				std::stringstream streamz;
+				streamx << std::fixed << std::setprecision(2) << i.coord.x;
+				streamy << std::fixed << std::setprecision(2) << i.coord.y;
+				streamz << std::fixed << std::setprecision(2) << i.coord.z;
+				
+			}
+        }
+    }
+}
+
+
 int main(int argc, char *argv[]) {
-    std::string names_file = "data/coco.names";
-    std::string cfg_file = "cfg/yolov3.cfg";
-    std::string weights_file = "yolov3.weights";
+    std::string names_file = "../../../src/zed-yolo/libdarknet/data/coco.names";
+    std::string cfg_file = "../../../src/zed-yolo/libdarknet/cfg/yolov3-tiny.cfg";
+    std::string weights_file = "../../../src/zed-yolo/yolov3-tiny.weights";
     std::string filename;
+    
+    // ROS
+    // last argument of init is the node name
+	ros::init(argc, argv, "YOLO_People_position");
+	ros::NodeHandle n;
+	ros::Publisher people_position_pub = n.advertise<std_msgs::String>("people_topic", 1);
+	ros::Rate loop_rate(10);
 
     if (argc > 3) { //voc.names yolo-voc.cfg yolo-voc.weights svo_file.svo
         names_file = argv[1];
@@ -199,7 +238,15 @@ int main(int argc, char *argv[]) {
 
     std::thread detect_thread(detectorThread, cfg_file, weights_file, thresh);
 
-    while (!exit_flag) {
+    while (!exit_flag && ros::ok()) {
+		
+		//ROS
+		std_msgs::String msg;
+		std::stringstream ss;
+		ss << "Hi there";
+		msg.data = ss.str();
+		people_position_pub.publish(msg);
+		ros::spinOnce();
 
         if (zed.grab() == sl::SUCCESS) {
             zed.retrieveImage(left);
