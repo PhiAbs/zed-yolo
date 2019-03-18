@@ -11,10 +11,13 @@
 
 // ROS
 #include "ros/ros.h"
+#include "ros/console.h"
 #include "std_msgs/String.h"
 #include <sstream>
 #include <spencer_tracking_msgs/DetectedPersons.h>
 #include <spencer_tracking_msgs/DetectedPerson.h>
+#include <geometry_msgs/PoseArray.h>
+#include <geometry_msgs/Pose.h>
 
 
 // This is a modified version of https://github.com/AlexeyAB/darknet/blob/master/src/yolo_console_dll.cpp
@@ -74,7 +77,6 @@ std::vector<bbox_t_3d> getObjectDepth(std::vector<bbox_t> &bbox_vect, sl::Mat &x
                 }
             }
         } 
-        std::cout<<"X end "<< std::endl;
 
         if (x_vect.size() * y_vect.size() * z_vect.size() > 0) {
             float x_med = getMedian(x_vect);
@@ -183,23 +185,22 @@ void detectorThread(std::string cfg_file, std::string weights_file, float thresh
 }
 
 // Extract relevant information and fill it into a ROS message
-spencer_tracking_msgs::DetectedPersons fill_people_msg(std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
+geometry_msgs::PoseArray fill_people_msg(std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
 	
-	spencer_tracking_msgs::DetectedPersons detected_persons;
-	spencer_tracking_msgs::DetectedPerson detected_person;
+	geometry_msgs::PoseArray  detected_persons;
+	geometry_msgs::Pose  detected_person;
 	
     for (auto &i : result_vec) {
 		if (obj_names.size() > i.bbox.obj_id) {
 			if (obj_names[i.bbox.obj_id] == "person"){
 				
-				detected_person.pose.pose.position.x = i.coord.x;
-				detected_person.pose.pose.position.y = i.coord.y;
-				detected_person.pose.pose.position.z = i.coord.z;
-				detected_person.modality = spencer_tracking_msgs::DetectedPerson::MODALITY_GENERIC_RGBD;
+				detected_person.position.x = i.coord.x;
+				detected_person.position.y = i.coord.y;
+				detected_person.position.z = i.coord.z;
 				
+				detected_persons.poses.push_back(detected_person);
 			}
         }
-        detected_persons.detections.push_back(detected_person);
     }
     
     return detected_persons;
@@ -207,25 +208,23 @@ spencer_tracking_msgs::DetectedPersons fill_people_msg(std::vector<bbox_t_3d> re
 
 
 int main(int argc, char *argv[]) {
-    std::string names_file = "../../../src/zed-yolo/libdarknet/data/coco.names";
-    std::string cfg_file = "../../../src/zed-yolo/libdarknet/cfg/yolov3-tiny.cfg";
-    std::string weights_file = "../../../src/zed-yolo/yolov3-tiny.weights";
-    std::string filename;
     
     // Initialize ROS stuff
     // last argument of init is the node name
 	ros::init(argc, argv, "YOLO_People_position");
 	ros::NodeHandle n;
-	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPerson>("people_topic", 1);
-	ros::Rate loop_rate(10);
+	ros::Publisher people_position_pub = n.advertise<geometry_msgs::PoseArray>("people_topic", 10);
+	ros::Rate loop_rate(20);
 
-    if (argc > 3) { //voc.names yolo-voc.cfg yolo-voc.weights svo_file.svo
-        names_file = argv[1];
-        cfg_file = argv[2];
-        weights_file = argv[3];
-        if (argc > 4)
-            filename = argv[4];
-    } else if (argc > 1) filename = argv[1];
+	//~ Load ROS parameters
+	std::string names_file;
+    std::string cfg_file;
+    std::string weights_file;
+    std::string filename;
+    
+	n.getParam("/darknet_zed/names_file", names_file);
+	n.getParam("/darknet_zed/cfg_file", cfg_file);
+	n.getParam("/darknet_zed/weights_file", weights_file);
 
     sl::Camera zed;
     sl::InitParameters init_params;
@@ -233,6 +232,7 @@ int main(int argc, char *argv[]) {
     init_params.coordinate_units = sl::UNIT_METER;
     if (!filename.empty()) init_params.svo_input_filename.set(filename.c_str());
 
+	std::cout << zed.open(init_params) << std::endl;
     zed.grab();
 
     float const thresh = (argc > 5) ? std::stof(argv[5]) : 0.25;
@@ -247,7 +247,8 @@ int main(int argc, char *argv[]) {
 
     std::thread detect_thread(detectorThread, cfg_file, weights_file, thresh);
 
-    while (!exit_flag && ros::ok()) {
+    while (ros::ok()) {
+	
 
         if (zed.grab() == sl::SUCCESS) {
             zed.retrieveImage(left);
@@ -267,14 +268,30 @@ int main(int argc, char *argv[]) {
             
             // Publish the message that contains infos about detected persons
             auto detected_persons_msg = fill_people_msg(result_vec_draw, obj_names);
+                        
+            detected_persons_msg.header.stamp = ros::Time::now();
 			people_position_pub.publish(detected_persons_msg);
+			
+			//~ geometry_msgs::Pose single_pose;
+			//~ geometry_msgs::PoseArray pose_array;
+			
+			//~ single_pose.position.x = 1;
+			//~ single_pose.position.y = 1;
+			//~ single_pose.position.z = 1;
+				
+			//~ pose_array.header.stamp = ros::Time::now();
+			//~ pose_array.poses.push_back(single_pose);
+			//~ people_position_pub.publish(pose_array);
+		
 			ros::spinOnce();
-
+			loop_rate.sleep();
         }
+		
 
         int key = cv::waitKey(15); // 3 or 16ms
         if (key == 'p') while (true) if (cv::waitKey(100) == 'p') break;
         if (key == 27 || key == 'q') exit_flag = true;
+        
     }
 
     detect_thread.join();

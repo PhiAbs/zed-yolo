@@ -20,6 +20,8 @@ find_package(catkin REQUIRED
     rospy
     std_msgs
     genmsg
+    spencer_tracking_msgs
+    geometry_msgs
 )
 
 IF(NOT WIN32)
@@ -46,6 +48,7 @@ FILE(GLOB_RECURSE SRC_FILES src/*.cpp)
 catkin_package()
 
 ADD_EXECUTABLE(${execName} ${SRC_FILES})
+#add_executable(darknet_zed_spencer src/main.cpp)
 add_definitions(-std=c++11 -g -O3)
 
 # Add the required libraries for linking:
