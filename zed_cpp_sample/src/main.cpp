@@ -101,11 +101,13 @@ void draw_boxes(cv::Mat mat_img, std::vector<bbox_t_3d> result_vec, std::vector<
 				std::stringstream streamx;
 				std::stringstream streamy;
 				std::stringstream streamz;
+				std::stringstream streamprob;
 				streamx << std::fixed << std::setprecision(2) << i.coord.x;
 				streamy << std::fixed << std::setprecision(2) << i.coord.y;
 				streamz << std::fixed << std::setprecision(2) << i.coord.z;
+				streamprob << std::fixed << std::setprecision(2) << i.bbox.prob;
 				
-				obj_name += ",  x = " + streamx.str() + "m,  y = " + streamy.str() + "m,  z = " + streamz.str();
+				obj_name += "prob = " + streamprob.str() + " ,  x = " + streamx.str() + "m,  y = " + streamy.str() + "m,  z = " + streamz.str();
 				cv::Size const text_size = getTextSize(obj_name, cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2, 2, 0);
 				int const max_width = (text_size.width > i.bbox.w + 2) ? text_size.width : (i.bbox.w + 2);
 				cv::rectangle(mat_img, cv::Point2f(std::max((int) i.bbox.x - 1, 0), std::max((int) i.bbox.y - 30, 0)),
@@ -185,23 +187,28 @@ void detectorThread(std::string cfg_file, std::string weights_file, float thresh
 }
 
 // Extract relevant information and fill it into a ROS message
-geometry_msgs::PoseArray fill_people_msg(std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
+spencer_tracking_msgs::DetectedPersons fill_people_msg(std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
 	
-	geometry_msgs::PoseArray  detected_persons;
-	geometry_msgs::Pose  detected_person;
+	spencer_tracking_msgs::DetectedPersons  detected_persons;
+	spencer_tracking_msgs::DetectedPerson  detected_person;
 	
     for (auto &i : result_vec) {
 		if (obj_names.size() > i.bbox.obj_id) {
 			if (obj_names[i.bbox.obj_id] == "person"){
 				
-				detected_person.position.x = i.coord.x;
-				detected_person.position.y = i.coord.y;
-				detected_person.position.z = i.coord.z;
+				detected_person.pose.pose.position.x = i.coord.x;
+				detected_person.pose.pose.position.y = i.coord.y;
+				detected_person.pose.pose.position.z = i.coord.z;
+				detected_person.modality = spencer_tracking_msgs::DetectedPerson::MODALITY_GENERIC_RGBD;
+				detected_person.confidence = i.bbox.prob;
 				
-				detected_persons.poses.push_back(detected_person);
+				detected_persons.detections.push_back(detected_person);
 			}
         }
     }
+    
+    detected_persons.header.stamp = ros::Time::now();
+    detected_persons.header.frame_id = "camera_link";
     
     return detected_persons;
 }
@@ -213,7 +220,7 @@ int main(int argc, char *argv[]) {
     // last argument of init is the node name
 	ros::init(argc, argv, "YOLO_People_position");
 	ros::NodeHandle n;
-	ros::Publisher people_position_pub = n.advertise<geometry_msgs::PoseArray>("people_topic", 10);
+	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 10);
 	ros::Rate loop_rate(20);
 
 	//~ Load ROS parameters
@@ -269,20 +276,8 @@ int main(int argc, char *argv[]) {
             // Publish the message that contains infos about detected persons
             auto detected_persons_msg = fill_people_msg(result_vec_draw, obj_names);
                         
-            detected_persons_msg.header.stamp = ros::Time::now();
 			people_position_pub.publish(detected_persons_msg);
 			
-			//~ geometry_msgs::Pose single_pose;
-			//~ geometry_msgs::PoseArray pose_array;
-			
-			//~ single_pose.position.x = 1;
-			//~ single_pose.position.y = 1;
-			//~ single_pose.position.z = 1;
-				
-			//~ pose_array.header.stamp = ros::Time::now();
-			//~ pose_array.poses.push_back(single_pose);
-			//~ people_position_pub.publish(pose_array);
-		
 			ros::spinOnce();
 			loop_rate.sleep();
         }
