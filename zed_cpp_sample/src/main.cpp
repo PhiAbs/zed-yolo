@@ -18,7 +18,9 @@
 #include <spencer_tracking_msgs/DetectedPerson.h>
 #include <geometry_msgs/PoseArray.h>
 #include <geometry_msgs/Pose.h>
-
+#include <sensor_msgs/Image.h>
+#include <sensor_msgs/image_encodings.h>
+#include <cv_bridge/cv_bridge.h>
 
 // This is a modified version of https://github.com/AlexeyAB/darknet/blob/master/src/yolo_console_dll.cpp
 // Basically simplified and using the ZED SDK
@@ -187,7 +189,10 @@ void detectorThread(std::string cfg_file, std::string weights_file, float thresh
 }
 
 // Extract relevant information and fill it into a ROS message
-spencer_tracking_msgs::DetectedPersons fill_people_msg(std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
+spencer_tracking_msgs::DetectedPersons fillPeopleMessage(
+		std::vector<bbox_t_3d> result_vec, 
+		std::vector<std::string> obj_names, 
+		std::string camera_frame_id) {
 	
 	spencer_tracking_msgs::DetectedPersons  detected_persons;
 	spencer_tracking_msgs::DetectedPerson  detected_person;
@@ -208,9 +213,23 @@ spencer_tracking_msgs::DetectedPersons fill_people_msg(std::vector<bbox_t_3d> re
     }
     
     detected_persons.header.stamp = ros::Time::now();
-    detected_persons.header.frame_id = "camera_link";
+    detected_persons.header.frame_id = camera_frame_id;
     
     return detected_persons;
+}
+
+
+sensor_msgs::Image fillRosImgMsg(cv::Mat cv_img, std::string camera_frame_id) {
+	cv_bridge::CvImage img_bridge;
+	sensor_msgs::Image ros_image;
+	std_msgs::Header header;
+	
+	header.stamp = ros::Time::now();
+	header.frame_id = camera_frame_id;
+	img_bridge = cv_bridge::CvImage(header, sensor_msgs::image_encodings::BGRA8, cv_img);
+	img_bridge.toImageMsg(ros_image);
+	
+	return ros_image;
 }
 
 
@@ -220,7 +239,8 @@ int main(int argc, char *argv[]) {
     // last argument of init is the node name
 	ros::init(argc, argv, "YOLO_People_position");
 	ros::NodeHandle n;
-	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 10);
+	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 1);
+	ros::Publisher image_pub = n.advertise<sensor_msgs::Image>("zed_yolo_detected_persons/image", 1);
 	ros::Rate loop_rate(20);
 
 	//~ Load ROS parameters
@@ -228,10 +248,12 @@ int main(int argc, char *argv[]) {
     std::string cfg_file;
     std::string weights_file;
     std::string filename;
+    std::string camera_frame_id;
     
 	n.getParam("/darknet_zed/names_file", names_file);
 	n.getParam("/darknet_zed/cfg_file", cfg_file);
 	n.getParam("/darknet_zed/weights_file", weights_file);
+	n.getParam("/darknet_zed/camera_frame_id", camera_frame_id);
 
     sl::Camera zed;
     sl::InitParameters init_params;
@@ -271,11 +293,14 @@ int main(int argc, char *argv[]) {
             data_lock.unlock();
 
             draw_boxes(cur_frame, result_vec_draw, obj_names);
-            cv::imshow("ZED", cur_frame);
+            //cv::imshow("ZED", cur_frame);
+            
+            // Publish ROS image message
+            auto ros_image_msg = fillRosImgMsg(cur_frame, camera_frame_id);
+            image_pub.publish(ros_image_msg);
             
             // Publish the message that contains infos about detected persons
-            auto detected_persons_msg = fill_people_msg(result_vec_draw, obj_names);
-                        
+            auto detected_persons_msg = fillPeopleMessage(result_vec_draw, obj_names, camera_frame_id);         
 			people_position_pub.publish(detected_persons_msg);
 			
 			ros::spinOnce();

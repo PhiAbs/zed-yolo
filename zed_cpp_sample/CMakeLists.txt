@@ -22,6 +22,8 @@ find_package(catkin REQUIRED
     genmsg
     spencer_tracking_msgs
     geometry_msgs
+    sensor_msgs
+    cv_bridge
 )
 
 IF(NOT WIN32)
