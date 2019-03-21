@@ -8,6 +8,7 @@
 #include <atomic>
 #include <mutex>              // std::mutex, std::unique_lock
 #include <condition_variable> // std::condition_variable
+#include <algorithm>
 
 // ROS
 #include "ros/ros.h"
@@ -33,6 +34,13 @@
 #include "yolo_v2_class.hpp"    // https://github.com/AlexeyAB/darknet/blob/master/src/yolo_v2_class.hpp
 #include <opencv2/opencv.hpp>
 
+
+std::mutex data_lock;
+cv::Mat cur_frame;
+std::vector<bbox_t> result_vect;
+std::atomic<bool> exit_flag, new_data;
+std::string object_name = "person";
+
 class bbox_t_3d {
 public:
     bbox_t bbox;
@@ -48,6 +56,55 @@ float getMedian(std::vector<float> &v) {
     size_t n = v.size() / 2;
     std::nth_element(v.begin(), v.begin() + n, v.end());
     return v[n];
+}
+
+std::vector<bbox_t> filterOutUnwantedDetections(std::vector<bbox_t> &bbox_vect, std::vector<std::string> obj_names) {
+	
+	std::vector<bbox_t> filtered_detections;
+	std::vector<bbox_t> filtered_detections_wo_doubles;
+	std::vector<int> erase_these_elements;
+	
+	// filter out everything that is not a person
+	for (auto &it : bbox_vect){
+		if (obj_names[it.obj_id] == object_name) {
+			filtered_detections.push_back(it);
+		}
+	}
+	
+	// Sometimes, there are two or even more bounding boxes per detected person. 
+	// Use nonmax suppression to only keep the bounding box with the highest confidence	
+	for (int i = 0; i < filtered_detections.size(); i++) {
+		for (int j = 0; j < filtered_detections.size(); j++) {
+			// check if one bounding box lies completely within the other one
+			if ( (j != i) && (
+					(filtered_detections[i].x < filtered_detections[j].x && 
+					filtered_detections[i].y < filtered_detections[j].y &&
+					filtered_detections[i].x + filtered_detections[i].w > filtered_detections[j].x + filtered_detections[j].w &&
+					filtered_detections[i].y + filtered_detections[i].h > filtered_detections[j].y + filtered_detections[j].h) || 
+					(filtered_detections[i].x > filtered_detections[j].x && 
+					filtered_detections[i].y > filtered_detections[j].y &&
+					filtered_detections[i].x + filtered_detections[i].w < filtered_detections[j].x + filtered_detections[j].w &&
+					filtered_detections[i].y + filtered_detections[i].h < filtered_detections[j].y + filtered_detections[j].h))) {
+						
+				if (filtered_detections[i].prob > filtered_detections[j].prob) {
+					erase_these_elements.push_back(j);
+				} else {
+					erase_these_elements.push_back(i);
+				}
+			}
+		}
+	}
+	
+	// store all bounding boxes that lie not within each other
+	for (int i = 0; i < filtered_detections.size(); i++) {
+		if(std::find(erase_these_elements.begin(), erase_these_elements.end(), i) != erase_these_elements.end()) {
+			
+		} else {
+			filtered_detections_wo_doubles.push_back(filtered_detections[i]);
+		}
+	}
+	
+	return filtered_detections_wo_doubles;
 }
 
 std::vector<bbox_t_3d> getObjectDepth(std::vector<bbox_t> &bbox_vect, sl::Mat &xyzrgba) {
@@ -94,32 +151,28 @@ std::vector<bbox_t_3d> getObjectDepth(std::vector<bbox_t> &bbox_vect, sl::Mat &x
 
 void draw_boxes(cv::Mat mat_img, std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
     for (auto &i : result_vec) {
-		if (obj_names.size() > i.bbox.obj_id) {
-			if (obj_names[i.bbox.obj_id] == "person"){
-				cv::Scalar color = obj_id_to_color(i.bbox.obj_id);
-				cv::rectangle(mat_img, cv::Rect(i.bbox.x, i.bbox.y, i.bbox.w, i.bbox.h), color, 2);
-				
-				std::string obj_name = obj_names[i.bbox.obj_id];
-				std::stringstream streamx;
-				std::stringstream streamy;
-				std::stringstream streamz;
-				std::stringstream streamprob;
-				streamx << std::fixed << std::setprecision(2) << i.coord.x;
-				streamy << std::fixed << std::setprecision(2) << i.coord.y;
-				streamz << std::fixed << std::setprecision(2) << i.coord.z;
-				streamprob << std::fixed << std::setprecision(2) << i.bbox.prob;
-				
-				obj_name += "prob = " + streamprob.str() + " ,  x = " + streamx.str() + "m,  y = " + streamy.str() + "m,  z = " + streamz.str();
-				cv::Size const text_size = getTextSize(obj_name, cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2, 2, 0);
-				int const max_width = (text_size.width > i.bbox.w + 2) ? text_size.width : (i.bbox.w + 2);
-				cv::rectangle(mat_img, cv::Point2f(std::max((int) i.bbox.x - 1, 0), std::max((int) i.bbox.y - 30, 0)),
-						cv::Point2f(std::min((int) i.bbox.x + max_width, mat_img.cols - 1),
-						std::min((int) i.bbox.y, mat_img.rows - 1)),
-						color, CV_FILLED, 8, 0);
-				putText(mat_img, obj_name, cv::Point2f(i.bbox.x, i.bbox.y - 10), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2,
-						cv::Scalar(0, 0, 0), 2);
-			}
-        }
+		cv::Scalar color = obj_id_to_color(i.bbox.obj_id);
+		cv::rectangle(mat_img, cv::Rect(i.bbox.x, i.bbox.y, i.bbox.w, i.bbox.h), color, 2);
+		
+		std::string obj_name = object_name;
+		std::stringstream streamx;
+		std::stringstream streamy;
+		std::stringstream streamz;
+		std::stringstream streamprob;
+		streamx << std::fixed << std::setprecision(2) << i.coord.x;
+		streamy << std::fixed << std::setprecision(2) << i.coord.y;
+		streamz << std::fixed << std::setprecision(2) << i.coord.z;
+		streamprob << std::fixed << std::setprecision(2) << i.bbox.prob;
+		
+		obj_name += "prob = " + streamprob.str() + " ,  x = " + streamx.str() + "m,  y = " + streamy.str() + "m,  z = " + streamz.str();
+		cv::Size const text_size = getTextSize(obj_name, cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2, 2, 0);
+		int const max_width = (text_size.width > i.bbox.w + 2) ? text_size.width : (i.bbox.w + 2);
+		cv::rectangle(mat_img, cv::Point2f(std::max((int) i.bbox.x - 1, 0), std::max((int) i.bbox.y - 30, 0)),
+				cv::Point2f(std::min((int) i.bbox.x + max_width, mat_img.cols - 1),
+				std::min((int) i.bbox.y, mat_img.rows - 1)),
+				color, CV_FILLED, 8, 0);
+		putText(mat_img, obj_name, cv::Point2f(i.bbox.x, i.bbox.y - 10), cv::FONT_HERSHEY_COMPLEX_SMALL, 1.2,
+				cv::Scalar(0, 0, 0), 2);
     }
 }
 
@@ -167,11 +220,6 @@ cv::Mat slMat2cvMat(sl::Mat &input) {
 }
 
 
-std::mutex data_lock;
-cv::Mat cur_frame;
-std::vector<bbox_t> result_vect;
-std::atomic<bool> exit_flag, new_data;
-
 void detectorThread(std::string cfg_file, std::string weights_file, float thresh) {
     Detector detector(cfg_file, weights_file);
     std::shared_ptr<image_t> det_image;
@@ -198,18 +246,13 @@ spencer_tracking_msgs::DetectedPersons fillPeopleMessage(
 	spencer_tracking_msgs::DetectedPerson  detected_person;
 	
     for (auto &i : result_vec) {
-		if (obj_names.size() > i.bbox.obj_id) {
-			if (obj_names[i.bbox.obj_id] == "person"){
-				
-				detected_person.pose.pose.position.x = i.coord.x;
-				detected_person.pose.pose.position.y = i.coord.y;
-				detected_person.pose.pose.position.z = i.coord.z;
-				detected_person.modality = spencer_tracking_msgs::DetectedPerson::MODALITY_GENERIC_RGBD;
-				detected_person.confidence = i.bbox.prob;
-				
-				detected_persons.detections.push_back(detected_person);
-			}
-        }
+		detected_person.pose.pose.position.x = i.coord.x;
+		detected_person.pose.pose.position.y = i.coord.y;
+		detected_person.pose.pose.position.z = i.coord.z;
+		detected_person.modality = spencer_tracking_msgs::DetectedPerson::MODALITY_GENERIC_RGBD;
+		detected_person.confidence = i.bbox.prob;
+		
+		detected_persons.detections.push_back(detected_person);
     }
     
     detected_persons.header.stamp = ros::Time::now();
@@ -241,7 +284,7 @@ int main(int argc, char *argv[]) {
 	ros::NodeHandle n;
 	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 1);
 	ros::Publisher image_pub = n.advertise<sensor_msgs::Image>("zed_yolo_detected_persons/image", 1);
-	ros::Rate loop_rate(20);
+	ros::Rate loop_rate(40);
 
 	//~ Load ROS parameters
 	std::string names_file;
@@ -287,9 +330,11 @@ int main(int argc, char *argv[]) {
             new_data = true;
 
             zed.retrieveMeasure(cur_cloud, sl::MEASURE_XYZ);
+            
 
             data_lock.lock();
-            auto result_vec_draw = getObjectDepth(result_vect, cur_cloud);
+            auto result_vec_filtered = filterOutUnwantedDetections(result_vect, obj_names);
+            auto result_vec_draw = getObjectDepth(result_vec_filtered, cur_cloud);
             data_lock.unlock();
 
             draw_boxes(cur_frame, result_vec_draw, obj_names);
