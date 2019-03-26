@@ -282,7 +282,7 @@ int main(int argc, char *argv[]) {
     // last argument of init is the node name
 	ros::init(argc, argv, "YOLO_People_position");
 	ros::NodeHandle n;
-	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 1);
+	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 2);
 	ros::Publisher image_pub = n.advertise<sensor_msgs::Image>("zed_yolo_detected_persons/image", 1);
 	ros::Rate loop_rate(40);
 
@@ -300,7 +300,7 @@ int main(int argc, char *argv[]) {
 
     sl::Camera zed;
     sl::InitParameters init_params;
-    init_params.camera_resolution = sl::RESOLUTION_HD720;
+    init_params.camera_resolution = sl::RESOLUTION_HD1080;
     init_params.coordinate_units = sl::UNIT_METER;
     if (!filename.empty()) init_params.svo_input_filename.set(filename.c_str());
 
