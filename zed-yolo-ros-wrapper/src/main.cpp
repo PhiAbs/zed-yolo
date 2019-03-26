@@ -39,7 +39,7 @@ std::mutex data_lock;
 cv::Mat cur_frame;
 std::vector<bbox_t> result_vect;
 std::atomic<bool> exit_flag, new_data;
-std::string object_name = "person";
+
 
 class bbox_t_3d {
 public:
@@ -52,60 +52,13 @@ public:
     }
 };
 
+
 float getMedian(std::vector<float> &v) {
     size_t n = v.size() / 2;
     std::nth_element(v.begin(), v.begin() + n, v.end());
     return v[n];
 }
 
-std::vector<bbox_t> filterOutUnwantedDetections(std::vector<bbox_t> &bbox_vect, std::vector<std::string> obj_names) {
-	
-	std::vector<bbox_t> filtered_detections;
-	std::vector<bbox_t> filtered_detections_wo_doubles;
-	std::vector<int> erase_these_elements;
-	
-	// filter out everything that is not a person
-	for (auto &it : bbox_vect){
-		if (obj_names[it.obj_id] == object_name) {
-			filtered_detections.push_back(it);
-		}
-	}
-	
-	// Sometimes, there are two or even more bounding boxes per detected person. 
-	// Use nonmax suppression to only keep the bounding box with the highest confidence	
-	for (int i = 0; i < filtered_detections.size(); i++) {
-		for (int j = 0; j < filtered_detections.size(); j++) {
-			// check if one bounding box lies completely within the other one
-			if ( (j != i) && (
-					(filtered_detections[i].x < filtered_detections[j].x && 
-					filtered_detections[i].y < filtered_detections[j].y &&
-					filtered_detections[i].x + filtered_detections[i].w > filtered_detections[j].x + filtered_detections[j].w &&
-					filtered_detections[i].y + filtered_detections[i].h > filtered_detections[j].y + filtered_detections[j].h) || 
-					(filtered_detections[i].x > filtered_detections[j].x && 
-					filtered_detections[i].y > filtered_detections[j].y &&
-					filtered_detections[i].x + filtered_detections[i].w < filtered_detections[j].x + filtered_detections[j].w &&
-					filtered_detections[i].y + filtered_detections[i].h < filtered_detections[j].y + filtered_detections[j].h))) {
-						
-				if (filtered_detections[i].prob > filtered_detections[j].prob) {
-					erase_these_elements.push_back(j);
-				} else {
-					erase_these_elements.push_back(i);
-				}
-			}
-		}
-	}
-	
-	// store all bounding boxes that lie not within each other
-	for (int i = 0; i < filtered_detections.size(); i++) {
-		if(std::find(erase_these_elements.begin(), erase_these_elements.end(), i) != erase_these_elements.end()) {
-			
-		} else {
-			filtered_detections_wo_doubles.push_back(filtered_detections[i]);
-		}
-	}
-	
-	return filtered_detections_wo_doubles;
-}
 
 std::vector<bbox_t_3d> getObjectDepth(std::vector<bbox_t> &bbox_vect, sl::Mat &xyzrgba) {
     sl::float4 out(NAN, NAN, NAN, NAN);
@@ -149,7 +102,8 @@ std::vector<bbox_t_3d> getObjectDepth(std::vector<bbox_t> &bbox_vect, sl::Mat &x
     return bbox3d_vect;
 }
 
-void draw_boxes(cv::Mat mat_img, std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names) {
+
+void draw_boxes(cv::Mat mat_img, std::vector<bbox_t_3d> result_vec, std::vector<std::string> obj_names, std::string object_name) {
     for (auto &i : result_vec) {
 		cv::Scalar color = obj_id_to_color(i.bbox.obj_id);
 		cv::rectangle(mat_img, cv::Rect(i.bbox.x, i.bbox.y, i.bbox.w, i.bbox.h), color, 2);
@@ -176,6 +130,7 @@ void draw_boxes(cv::Mat mat_img, std::vector<bbox_t_3d> result_vec, std::vector<
     }
 }
 
+
 std::vector<std::string> objects_names_from_file(std::string const filename) {
     std::ifstream file(filename);
     std::vector<std::string> file_lines;
@@ -184,6 +139,7 @@ std::vector<std::string> objects_names_from_file(std::string const filename) {
     std::cout << "Object names loaded \n";
     return file_lines;
 }
+
 
 cv::Mat slMat2cvMat(sl::Mat &input) {
     // Mapping between MAT_TYPE and CV_TYPE
@@ -236,6 +192,57 @@ void detectorThread(std::string cfg_file, std::string weights_file, float thresh
     }
 }
 
+
+std::vector<bbox_t> filterOutUnwantedDetections(std::vector<bbox_t> &bbox_vect, std::vector<std::string> obj_names, std::string object_name) {
+	
+	std::vector<bbox_t> filtered_detections;
+	std::vector<bbox_t> filtered_detections_wo_doubles;
+	std::vector<int> erase_these_elements;
+	
+	// filter out everything that is not a person
+	for (auto &it : bbox_vect){
+		if (obj_names[it.obj_id] == object_name) {
+			filtered_detections.push_back(it);
+		}
+	}
+	
+	// Sometimes, there are two or even more bounding boxes per detected person. 
+	// Use nonmax suppression to only keep the bounding box with the highest confidence	
+	for (int i = 0; i < filtered_detections.size(); i++) {
+		for (int j = 0; j < filtered_detections.size(); j++) {
+			// check if one bounding box lies completely within the other one. If it does, only keep the box with the higher confidence
+			if ( (j != i) && (
+					(filtered_detections[i].x < filtered_detections[j].x && 
+					filtered_detections[i].y < filtered_detections[j].y &&
+					filtered_detections[i].x + filtered_detections[i].w > filtered_detections[j].x + filtered_detections[j].w &&
+					filtered_detections[i].y + filtered_detections[i].h > filtered_detections[j].y + filtered_detections[j].h) || 
+					(filtered_detections[i].x > filtered_detections[j].x && 
+					filtered_detections[i].y > filtered_detections[j].y &&
+					filtered_detections[i].x + filtered_detections[i].w < filtered_detections[j].x + filtered_detections[j].w &&
+					filtered_detections[i].y + filtered_detections[i].h < filtered_detections[j].y + filtered_detections[j].h))) {
+						
+				if (filtered_detections[i].prob > filtered_detections[j].prob) {
+					erase_these_elements.push_back(j);
+				} else {
+					erase_these_elements.push_back(i);
+				}
+			}
+		}
+	}
+	
+	// store all bounding boxes that lie not within each other
+	for (int i = 0; i < filtered_detections.size(); i++) {
+		if(std::find(erase_these_elements.begin(), erase_these_elements.end(), i) != erase_these_elements.end()) {
+			
+		} else {
+			filtered_detections_wo_doubles.push_back(filtered_detections[i]);
+		}
+	}
+	
+	return filtered_detections_wo_doubles;
+}
+
+
 // Extract relevant information and fill it into a ROS message
 spencer_tracking_msgs::DetectedPersons fillPeopleMessage(
 		std::vector<bbox_t_3d> result_vec, 
@@ -261,7 +268,7 @@ spencer_tracking_msgs::DetectedPersons fillPeopleMessage(
     return detected_persons;
 }
 
-
+// Publish the images with the detections on a ROS topic
 sensor_msgs::Image fillRosImgMsg(cv::Mat cv_img, std::string camera_frame_id) {
 	cv_bridge::CvImage img_bridge;
 	sensor_msgs::Image ros_image;
@@ -278,13 +285,10 @@ sensor_msgs::Image fillRosImgMsg(cv::Mat cv_img, std::string camera_frame_id) {
 
 int main(int argc, char *argv[]) {
     
-    // Initialize ROS stuff
+    // Initialize ROS node
     // last argument of init is the node name
-	ros::init(argc, argv, "YOLO_People_position");
+	ros::init(argc, argv, "zed_yolo_detector");
 	ros::NodeHandle n;
-	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("zed_yolo_detected_persons", 2);
-	ros::Publisher image_pub = n.advertise<sensor_msgs::Image>("zed_yolo_detected_persons/image", 1);
-	ros::Rate loop_rate(40);
 
 	//~ Load ROS parameters
 	std::string names_file;
@@ -292,11 +296,24 @@ int main(int argc, char *argv[]) {
     std::string weights_file;
     std::string filename;
     std::string camera_frame_id;
+    std::string object_name;
+    int loop_rate_param;
+    float confidence_thresh;
     
-	n.getParam("/darknet_zed/names_file", names_file);
-	n.getParam("/darknet_zed/cfg_file", cfg_file);
-	n.getParam("/darknet_zed/weights_file", weights_file);
-	n.getParam("/darknet_zed/camera_frame_id", camera_frame_id);
+    
+	n.getParam("/zed_yolo_detector/names_file", names_file);
+	n.getParam("/zed_yolo_detector/cfg_file", cfg_file);
+	n.getParam("/zed_yolo_detector/weights_file", weights_file);
+	n.getParam("/zed_yolo_detector/camera_frame_id", camera_frame_id);
+	n.getParam("/zed_yolo_detector/object_name", object_name);
+	n.getParam("/zed_yolo_detector/loop_rate_param", loop_rate_param);
+	n.getParam("/zed_yolo_detector/confidence_thresh", confidence_thresh);
+	
+	// Initialize publishers. Topics are getting remapped
+	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("detections_output", 1);
+	ros::Publisher image_pub = n.advertise<sensor_msgs::Image>("detections_image", 1);
+	
+	ros::Rate loop_rate(loop_rate_param);
 
     sl::Camera zed;
     sl::InitParameters init_params;
@@ -307,7 +324,7 @@ int main(int argc, char *argv[]) {
 	std::cout << zed.open(init_params) << std::endl;
     zed.grab();
 
-    float const thresh = (argc > 5) ? std::stof(argv[5]) : 0.25;
+    float const thresh = (argc > 5) ? std::stof(argv[5]) : confidence_thresh;
     auto obj_names = objects_names_from_file(names_file);
 
     sl::Mat left, cur_cloud;
@@ -320,7 +337,6 @@ int main(int argc, char *argv[]) {
     std::thread detect_thread(detectorThread, cfg_file, weights_file, thresh);
 
     while (ros::ok()) {
-	
 
         if (zed.grab() == sl::SUCCESS) {
             zed.retrieveImage(left);
@@ -331,13 +347,12 @@ int main(int argc, char *argv[]) {
 
             zed.retrieveMeasure(cur_cloud, sl::MEASURE_XYZ);
             
-
             data_lock.lock();
-            auto result_vec_filtered = filterOutUnwantedDetections(result_vect, obj_names);
+            auto result_vec_filtered = filterOutUnwantedDetections(result_vect, obj_names, object_name);
             auto result_vec_draw = getObjectDepth(result_vec_filtered, cur_cloud);
             data_lock.unlock();
 
-            draw_boxes(cur_frame, result_vec_draw, obj_names);
+            draw_boxes(cur_frame, result_vec_draw, obj_names, object_name);
             //cv::imshow("ZED", cur_frame);
             
             // Publish ROS image message
@@ -352,7 +367,6 @@ int main(int argc, char *argv[]) {
 			loop_rate.sleep();
         }
 		
-
         int key = cv::waitKey(15); // 3 or 16ms
         if (key == 'p') while (true) if (cv::waitKey(100) == 'p') break;
         if (key == 27 || key == 'q') exit_flag = true;

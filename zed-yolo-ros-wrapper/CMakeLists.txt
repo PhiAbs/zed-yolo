@@ -1,6 +1,6 @@
-SET(execName darknet_zed)
+SET(execName zed_yolo_detector)
 CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
-PROJECT(${execName})
+PROJECT(zed-yolo-ros-people-detector)
 
 if(COMMAND cmake_policy)
 	cmake_policy(SET CMP0003 OLD)
