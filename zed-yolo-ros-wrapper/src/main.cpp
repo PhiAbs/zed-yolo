@@ -256,7 +256,7 @@ spencer_tracking_msgs::DetectedPersons fillPeopleMessage(
 		detected_person.pose.pose.position.x = i.coord.x;
 		detected_person.pose.pose.position.y = i.coord.y;
 		detected_person.pose.pose.position.z = i.coord.z;
-		detected_person.modality = spencer_tracking_msgs::DetectedPerson::MODALITY_GENERIC_RGBD;
+		detected_person.modality = spencer_tracking_msgs::DetectedPerson::MODALITY_GENERIC_YOLO;
 		detected_person.confidence = i.bbox.prob;
 		
 		detected_persons.detections.push_back(detected_person);
