@@ -1,26 +1,34 @@
 # Stereolabs ZED - YOLO 3D
+This package lets you use [YOLO (v2 or v3)](http://pjreddie.com/darknet/yolo/) to detect pedestrians.
 
-This package lets you use [YOLO (v2 or v3)](http://pjreddie.com/darknet/yolo/), the deep learning object detector using the ZED stereo camera in Python 3 or C++.
+The left image will be used to display the detected pedestrians alongside the position relative to the camera.
 
-The left image will be used to display the detected objects alongside the distance of each, using the ZED Depth.
-
-<p align="center">
-  <img src="preview.png" width=676 height=450>
-</p>
 
 ## Prerequisites
-
-- Windows 7 64bits or later, Ubuntu 16.04
+- Ubuntu 16.04 or Ubuntu 18.04
 - [ZED SDK](https://www.stereolabs.com/developers/) and its dependencies ([CUDA](https://developer.nvidia.com/cuda-downloads))
 
-## How to use YOLO 3D in Python
 
-Please refer to instructions in [zed_python_sample](./zed_python_sample)
+## Installation
+refer to the readme in the yolo_pedestrian_detector folder
 
-## How to use YOLO 3D in C++ (Linux only)
 
-Please refer to instructions in [zed_cpp_sample](./zed_cpp_sample)
+## ROS integration
+The image with the marked pedestrians as well as a vector containing all detected persons (spencer_tracking_msgs::DetectedPersons) are published on the two following topics:
+- /zed_yolo_detected_persons/image
+- /zed_yolo_detected_persons
 
-## Using Docker
+There are two different launch files available. One uses a very lightweight YOLOv3 model which is able to run at around 18 FPS on an nvidia jetson agx xavier board. The other launch file uses a heavier YOLOv3 model with slightly better detection accuracy. It is recommended to use the lightweight model. 
 
-A DockerFile is provided in the [docker folder](./docker)
+lighweight model:
+- roslaunch yolo_pedestrian_detector pedestrian_detector_tiny.launch
+
+normal model:
+- roslaunch yolo_pedestrian_detector pedestrian_detector.launch
+
+The weight files can be downloaded from here: 
+- https://pjreddie.com/darknet/yolo/
+(YOLOv3-tiny and YOLOv3-416)
+
+place the weights files in here: 
+libdarknet/weights
