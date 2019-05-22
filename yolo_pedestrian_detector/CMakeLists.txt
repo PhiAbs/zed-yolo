@@ -1,4 +1,4 @@
-SET(execName zed_yolo_detector)
+SET(execName yolo_pedestrian_detector)
 CMAKE_MINIMUM_REQUIRED(VERSION 2.4)
 PROJECT(yolo_pedestrian_detector)
 

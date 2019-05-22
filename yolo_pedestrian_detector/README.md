@@ -11,7 +11,7 @@ Clone and build package
         cd src
         git clone https://github.com/PhiAbs/master.git
         cd ..
-        catkin build
+        catkin_make
 
 ## Compile Darknet
 

@@ -287,7 +287,7 @@ int main(int argc, char *argv[]) {
     
     // Initialize ROS node
     // last argument of init is the node name
-	ros::init(argc, argv, "zed_yolo_detector");
+	ros::init(argc, argv, "yolo_pedestrian_detector");
 	ros::NodeHandle n;
 
 	//~ Load ROS parameters
@@ -301,13 +301,13 @@ int main(int argc, char *argv[]) {
     float confidence_thresh;
     
     
-	n.getParam("/zed_yolo_detector/names_file", names_file);
-	n.getParam("/zed_yolo_detector/cfg_file", cfg_file);
-	n.getParam("/zed_yolo_detector/weights_file", weights_file);
-	n.getParam("/zed_yolo_detector/camera_frame_id", camera_frame_id);
-	n.getParam("/zed_yolo_detector/object_name", object_name);
-	n.getParam("/zed_yolo_detector/loop_rate_param", loop_rate_param);
-	n.getParam("/zed_yolo_detector/confidence_thresh", confidence_thresh);
+	n.getParam("/yolo_pedestrian_detector/names_file", names_file);
+	n.getParam("/yolo_pedestrian_detector/cfg_file", cfg_file);
+	n.getParam("/yolo_pedestrian_detector/weights_file", weights_file);
+	n.getParam("/yolo_pedestrian_detector/camera_frame_id", camera_frame_id);
+	n.getParam("/yolo_pedestrian_detector/object_name", object_name);
+	n.getParam("/yolo_pedestrian_detector/loop_rate_param", loop_rate_param);
+	n.getParam("/yolo_pedestrian_detector/confidence_thresh", confidence_thresh);
 	
 	// Initialize publishers. Topics are getting remapped
 	ros::Publisher people_position_pub = n.advertise<spencer_tracking_msgs::DetectedPersons>("detections_output", 1);
